@@ -1,0 +1,17 @@
+{
+  "name": "jordanshelpdesk",
+  "version": "1.0.0",
+  "description": "Chat Bot Builder at MS day",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Rian Finnegan",
+  "license": "ISC",
+  "dependencies": {
+    "botbuilder": "^3.8.4",
+    "dotenv": "^4.0.0",
+    "nodemon": "^1.11.0",
+    "restify": "^4.3.0"
+  }
+}
