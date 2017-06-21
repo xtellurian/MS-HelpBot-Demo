@@ -1,10 +1,18 @@
+// TODO task 6 on exercise 4
+
 require('dotenv').config();
 const fs = require('fs');
 const restify = require('restify');
 const builder = require('botbuilder');
+const azureSearch = require('./azureSearchApiClient');
 
 // services
 const ticketsApi = require('./ticketsApi');
+const azureSearchQuery = azureSearch({
+    searchName: process.env.AZURE_SEARCH_ACCOUNT,
+    indexName: process.env.AZURE_SEARCH_INDEX,
+    searchKey: process.env.AZURE_SEARCH_KEY
+});
 
 // config
 const listenPort = process.env.port || process.env.PORT || 3978;
@@ -145,6 +153,30 @@ bot.dialog('SubmitTicket', [
     }
 }).cancelAction('cancel', "I'm not going to submit that ticket", {
     matches: /cancel/
+});
+
+bot.dialog('ExploreKnowledgeBase', [
+    (session, args) => {
+        var category = builder.EntityRecognizer.findEntity(args.intent.entities, 'category');
+        if (!category) {
+            return session.endDialog('Try typing something like _explore hardware_.');
+        }
+        // search by category
+        azureSearchQuery('$filter=' + encodeURIComponent(`category eq '${category.entity}'`), (error, result) => {
+            if (error) {
+                console.log(error);
+                session.endDialog('Ooops! Something went wrong while contacting Azure Search. Please try again later.');
+            } else {
+                var msg = `These are some articles I\'ve found in the knowledge base for the _'${category.entity}'_ category:`;
+                result.value.forEach((article) => {
+                    msg += `\n * ${article.title}`;
+                });
+                session.endDialog(msg);
+            }
+        });
+    }
+]).triggerAction({
+    matches: 'exploreKnowledgeBase'
 });
 
 bot.dialog('status', [
