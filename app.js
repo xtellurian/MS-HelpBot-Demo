@@ -5,6 +5,7 @@ const fs = require('fs');
 const restify = require('restify');
 const builder = require('botbuilder');
 const azureSearch = require('./azureSearchApiClient');
+const card = require('./articlesCard');
 
 // services
 const ticketsApi = require('./ticketsApi');
@@ -278,12 +279,7 @@ bot.dialog('ShowKBResults', [
             var msg = new builder.Message(session).attachmentLayout(builder.AttachmentLayout.carousel);
             args.result.value.forEach((faq, i) => {
                 msg.addAttachment(
-                    new builder.ThumbnailCard(session)
-                        .title(faq.title)
-                        .subtitle(`Category: ${faq.category} | Search Score: ${faq['@search.score']}`)
-                        .text(faq.text.substring(0, Math.min(faq.text.length, 50) + '...'))
-                        .images([builder.CardImage.create(session, 'https://bot-framework.azureedge.net/bot-icons-v1/bot-framework-default-7.png')])
-                        .buttons([{ title: 'More details', value: `show me the article ${faq.title}`, type: 'postBack' }])
+                     card(faq, null)
                 );
             });
             session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
