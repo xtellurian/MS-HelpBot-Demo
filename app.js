@@ -29,33 +29,88 @@ var connector = new builder.ChatConnector({
 // Listen for messages from users
 server.post('/api/messages', connector.listen());
 
-// Receive messages from the user and respond by echoing each message back (prefixed with 'You said:')
-// var bot = new builder.UniversalBot(connector, [
-//     (session, args, next) => {
-//         session.send('You said: ' + session.message.text + ' which was ' + session.message.text.length + ' characters');
+
+var bot = new builder.UniversalBot(connector, (session) => {
+    session.endDialog(`I'm sorry, I did not understand '${session.message.text}'.\nType 'help' to know more about me :)`);
+});
+
+var luisRecognizer = new builder.LuisRecognizer(process.env.LUIS_MODEL_URL).onEnabled(function (context, callback) {
+    var enabled = context.dialogStack().length === 0;
+    callback(null, enabled);
+});
+bot.recognizer(luisRecognizer);
+
+bot.on('conversationUpdate', function (message) {
+    // how do we check is user and not bot?
+    // set a flag and don't repeat this greeting
+    // how do we access session here?
+
+    if (message.membersAdded[0].id === message.user.id) {
+        var name = message.user ? message.user.name : null;
+        var reply = new builder.Message()
+            .address(message.address)
+            .text("Hello %s... Thanks for adding me.", name || 'there');
+        bot.send(reply);
+    }
+});
+
+// bot.dialog('firstRun', function (session) {    
+//     session.userData.firstRun = true;
+//     session.send("Hello...").endDialog();
+// }).triggerAction({
+//     onFindAction: function (context, callback) {
+//         // Only trigger if we've never seen user before
+//         console.log("this callback");
+//         if (!context.userData.firstRun) {
+//             // Return a score of 1.1 to ensure the first run dialog wins
+//             callback(null, 1.1);
+//         } else {
+//             callback(null, 0.0);
+//         }
 //     }
-// ]);
+// });
 
-var bot = new builder.UniversalBot(connector, [
+
+
+bot.dialog('SubmitTicket', [
     (session, args, next) => {
-        session.send('Hi! I\'m the help desk bot and I can help you create a ticket.');
-        builder.Prompts.text(session, 'First, please briefly describe your problem to me.');
-    },
-    (session, result, next) => {
-        session.dialogData.description = result.response;
+        var category = builder.EntityRecognizer.findEntity(args.intent.entities, 'category');
+        var severity = builder.EntityRecognizer.findEntity(args.intent.entities, 'severity');
 
-        var choices = ['high', 'normal', 'low'];
-        builder.Prompts.choice(session, 'Which is the severity of this problem?', choices, {
-            listStyle: builder.ListStyle.button
-        });
-    },
-    (session, result, next) => {
-        session.dialogData.severity = result.response.entity;
+        if (category && category.resolution.values.length > 0) {
+            session.dialogData.category = category.resolution.values[0];
+        }
 
-        builder.Prompts.text(session, 'Which would be the category for this ticket (software, hardware, networking, security or other)?');
+        if (severity && severity.resolution.values.length > 0) {
+            session.dialogData.severity = severity.resolution.values[0];
+        }
+
+        session.dialogData.description = session.message.text;
+
+        if (!session.dialogData.severity) {
+            var choices = ['high', 'normal', 'low'];
+            builder.Prompts.choice(session, 'Which is the severity of this problem?', choices, {
+                listStyle: builder.ListStyle.button
+            });
+        } else {
+            next();
+        }
     },
     (session, result, next) => {
-        session.dialogData.category = result.response;
+        if (!session.dialogData.severity) {
+            session.dialogData.severity = result.response.entity;
+        }
+
+        if (!session.dialogData.category) {
+            builder.Prompts.text(session, 'Which would be the category for this ticket (software, hardware, network, and so on)?');
+        } else {
+            next();
+        }
+    },
+    (session, result, next) => {
+        if (!session.dialogData.category) {
+            session.dialogData.category = result.response;
+        }
 
         var message = `Great! I'm going to create a "${session.dialogData.severity}" severity ticket in the "${session.dialogData.category}" category. ` +
             `The description I will use is "${session.dialogData.description}". Can you please confirm that this information is correct?`;
@@ -92,18 +147,21 @@ var bot = new builder.UniversalBot(connector, [
             session.endDialog('Ok. The ticket was not created. You can start again if you want.');
         }
     }
-]).on('conversationUpdate', function (message) {
-    console.log("calling this guy");
-    console.log(message.user);
-    // how do we check is user and not bot?
-    
-    var name = message.user ? message.user.name : null;
-    var reply = new builder.Message()
-        .address(message.address)
-        .text("Hello %s... Thanks for adding me.", name || 'there');
-    console.log(reply);
-    bot.send(reply);
+]).triggerAction({
+    matches: 'SubmitTicket'
+}).cancelAction('cancel', "I'm not going to submit that ticket", {
+    matches: 'cancelTicketSubmit'
 });
+
+bot.dialog('help',
+    (session, args, next) => {
+        session.endDialog(`I'm the help desk bot and I can help you create a ticket.\n` +
+            `You can tell me things like _I need to reset my password_ or _I cannot print_.`);
+    }
+).triggerAction({
+    matches: 'help'
+});
+
 
 const createCard = (ticketId, data) => {
     var cardTxt = fs.readFileSync('./cards/ticket.json', 'UTF-8');
