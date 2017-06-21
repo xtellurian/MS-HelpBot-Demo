@@ -18,7 +18,8 @@ server.listen(listenPort, '::', () => {
 
 // Setup body parser and tickets api
 server.use(restify.bodyParser());
-server.post('/api/tickets', ticketsApi);
+server.post('/api/tickets', ticketsApi.add);
+server.get('/api/tickets/:id', ticketsApi.get);
 
 // Create chat connector for communicating with the Bot Framework Service
 var connector = new builder.ChatConnector({
@@ -35,15 +36,13 @@ var bot = new builder.UniversalBot(connector, (session) => {
 });
 
 var luisRecognizer = new builder.LuisRecognizer(process.env.LUIS_MODEL_URL).onEnabled(function (context, callback) {
-    var enabled = context.dialogStack().length === 0;
-    callback(null, enabled);
+     var enabled = context.dialogStack().length === 0 || context.dialogStack()[0].id === '*:SubmitTicket';
+     console.log('luis enabled:' + enabled);
+     callback(null, enabled);
 });
 bot.recognizer(luisRecognizer);
 
 bot.on('conversationUpdate', function (message) {
-    // how do we check is user and not bot?
-    // set a flag and don't repeat this greeting
-    // how do we access session here?
 
     if (message.membersAdded[0].id === message.user.id) {
         var name = message.user ? message.user.name : null;
@@ -53,22 +52,6 @@ bot.on('conversationUpdate', function (message) {
         bot.send(reply);
     }
 });
-
-// bot.dialog('firstRun', function (session) {    
-//     session.userData.firstRun = true;
-//     session.send("Hello...").endDialog();
-// }).triggerAction({
-//     onFindAction: function (context, callback) {
-//         // Only trigger if we've never seen user before
-//         console.log("this callback");
-//         if (!context.userData.firstRun) {
-//             // Return a score of 1.1 to ensure the first run dialog wins
-//             callback(null, 1.1);
-//         } else {
-//             callback(null, 0.0);
-//         }
-//     }
-// });
 
 
 
@@ -125,6 +108,7 @@ bot.dialog('SubmitTicket', [
                 category: session.dialogData.category,
                 severity: session.dialogData.severity,
                 description: session.dialogData.description,
+                status: 'created'
             }
 
             const client = restify.createJsonClient({
@@ -149,14 +133,64 @@ bot.dialog('SubmitTicket', [
     }
 ]).triggerAction({
     matches: 'SubmitTicket'
+}).beginDialogAction('help', 'help', {
+    matches: 'help',
+    onFindAction: (context, callback) => {
+        if (context.message === 'cancel') {
+            callback(null, 0.1); // we always want help to be triggered
+        } else {
+            callback(null, 0.99); // we always want help to be triggered
+        }
+
+    }
 }).cancelAction('cancel', "I'm not going to submit that ticket", {
-    matches: 'cancelTicketSubmit'
+    matches: /cancel/
+});
+
+bot.dialog('status', [
+    (session, args, next) => {
+        if (!session.dialogData.ticketNumber) {
+            builder.Prompts.text(session, "What's your ticket number?");
+        }
+    },
+    (session, args, next) => {
+        var ticketNumber = parseInt(session.message.text, 10);
+        if (!isNaN(ticketNumber)) {
+            console.log('found a ticket number');
+            session.dialogData.ticketNumber = ticketNumber;
+            session.sendTyping();
+
+            builder.Prompts.text(session, "OK I'll look up ticket " + ticketNumber + " for you...");
+
+            const client = restify.createJsonClient({
+                url: ticketSubmissionUrl
+            });
+            session.sendTyping();
+            console.log("looking up ticket number " + ticketNumber);
+            client.get('/api/tickets/'+ticketNumber, (err, request, response, status) => {
+                if (err || !status) {
+                    session.send('Sorry, I could not find ticket number ' + ticketNumber);
+                } else {
+                   session.send('Ticket number' + ticketNumber + ' is ' + status);
+                }
+
+                session.endDialog();
+            });
+        } 
+    }
+]).triggerAction({
+    matches: 'FindStatus'
 });
 
 bot.dialog('help',
     (session, args, next) => {
-        session.endDialog(`I'm the help desk bot and I can help you create a ticket.\n` +
-            `You can tell me things like _I need to reset my password_ or _I cannot print_.`);
+        if (session.dialogStack()[0].id === '*:SubmitTicket') {
+            session.endDialog("You can follow my prompts to submit a ticket. If you don't want to submit a ticket, type cancel")
+        } else {
+            session.endDialog(`I'm the help desk bot and I can help you create a ticket.\n` +
+                `You can tell me things like _I need to reset my password_ or _I cannot print_.`);
+        }
+
     }
 ).triggerAction({
     matches: 'help'
