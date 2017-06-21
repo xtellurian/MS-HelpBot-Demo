@@ -44,9 +44,9 @@ var bot = new builder.UniversalBot(connector, (session) => {
 });
 
 var luisRecognizer = new builder.LuisRecognizer(process.env.LUIS_MODEL_URL).onEnabled(function (context, callback) {
-     var enabled = context.dialogStack().length === 0 || context.dialogStack()[0].id === '*:SubmitTicket';
-     console.log('luis enabled:' + enabled);
-     callback(null, enabled);
+    var enabled = context.dialogStack().length === 0 || context.dialogStack()[0].id === '*:SubmitTicket';
+    console.log('luis enabled:' + enabled);
+    callback(null, enabled);
 });
 bot.recognizer(luisRecognizer);
 
@@ -156,28 +156,72 @@ bot.dialog('SubmitTicket', [
 });
 
 bot.dialog('ExploreKnowledgeBase', [
-    (session, args) => {
+    (session, args, next) => {
         var category = builder.EntityRecognizer.findEntity(args.intent.entities, 'category');
+
         if (!category) {
-            return session.endDialog('Try typing something like _explore hardware_.');
+            // retrieve facets
+            azureSearchQuery('facet=category', (error, result) => {
+                if (error) {
+                    session.endDialog('Ooops! Something went wrong while contacting Azure Search. Please try again later.');
+                } else {
+                    var choices = result['@search.facets'].category.map(item => `${item.value} (${item.count})`);
+                    builder.Prompts.choice(session, 'Let\'s see if I can find something in the knowledge base for you. Which category is your question about?', choices, {
+                        listStyle: builder.ListStyle.button
+                    });
+                }
+            });
+        } else {
+            if (!session.dialogData.category) {
+                session.dialogData.category = category.entity;
+            }
+
+            next();
         }
+    },
+    (session, args) => {
+        var category;
+
+        if (session.dialogData.category) {
+            category = session.dialogData.category;
+        } else {
+            category = args.response.entity.replace(/\s\([^)]*\)/, '');
+        }
+
         // search by category
-        azureSearchQuery('$filter=' + encodeURIComponent(`category eq '${category.entity}'`), (error, result) => {
+        azureSearchQuery('$filter=' + encodeURIComponent(`category eq '${category}'`), (error, result) => {
             if (error) {
-                console.log(error);
                 session.endDialog('Ooops! Something went wrong while contacting Azure Search. Please try again later.');
             } else {
-                var msg = `These are some articles I\'ve found in the knowledge base for the _'${category.entity}'_ category:`;
-                result.value.forEach((article) => {
-                    msg += `\n * ${article.title}`;
+                session.replaceDialog('ShowKBResults', {
+                    result,
+                    originalText: category
                 });
-                session.endDialog(msg);
             }
         });
     }
 ]).triggerAction({
     matches: 'exploreKnowledgeBase'
 });
+
+bot.dialog('SearchKB', [
+        (session) => {
+            session.sendTyping();
+            azureSearchQuery(`search=${encodeURIComponent(session.message.text.substring('search about '.length))}`, (err, result) => {
+                if (err) {
+                    session.send('Ooops! Something went wrong while contacting Azure Search. Please try again later.');
+                    return;
+                }
+                session.replaceDialog('ShowKBResults', {
+                    result,
+                    originalText: session.message.text
+                });
+            });
+        }
+    ])
+    .triggerAction({
+        matches: /^search about (.*)/i
+    });
 
 bot.dialog('status', [
     (session, args, next) => {
@@ -199,16 +243,16 @@ bot.dialog('status', [
             });
             session.sendTyping();
             console.log("looking up ticket number " + ticketNumber);
-            client.get('/api/tickets/'+ticketNumber, (err, request, response, status) => {
+            client.get('/api/tickets/' + ticketNumber, (err, request, response, status) => {
                 if (err || !status) {
                     session.send('Sorry, I could not find ticket number ' + ticketNumber);
                 } else {
-                   session.send('Ticket number' + ticketNumber + ' is ' + status);
+                    session.send('Ticket number' + ticketNumber + ' is ' + status);
                 }
 
                 session.endDialog();
             });
-        } 
+        }
     }
 ]).triggerAction({
     matches: 'FindStatus'
@@ -228,6 +272,42 @@ bot.dialog('help',
     matches: 'help'
 });
 
+bot.dialog('ShowKBResults', [
+    (session, args) => {
+        if (args.result.value.length > 0) {
+            var msg = new builder.Message(session).attachmentLayout(builder.AttachmentLayout.carousel);
+            args.result.value.forEach((faq, i) => {
+                msg.addAttachment(
+                    new builder.ThumbnailCard(session)
+                        .title(faq.title)
+                        .subtitle(`Category: ${faq.category} | Search Score: ${faq['@search.score']}`)
+                        .text(faq.text.substring(0, Math.min(faq.text.length, 50) + '...'))
+                        .images([builder.CardImage.create(session, 'https://bot-framework.azureedge.net/bot-icons-v1/bot-framework-default-7.png')])
+                        .buttons([{ title: 'More details', value: `show me the article ${faq.title}`, type: 'postBack' }])
+                );
+            });
+            session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
+            session.endDialog(msg);
+        } else {
+            session.endDialog(`Sorry, I could not find any results in the knowledge base for _'${args.originalText}'_`);
+        }
+    }
+]);
+
+bot.dialog('DetailsOf', [
+    (session, args) => {
+        var title = session.message.text.substring('show me the article '.length);
+        azureSearchQuery('$filter=' + encodeURIComponent(`title eq '${title}'`), (error, result) => {
+            if (error || !result.value[0]) {
+                session.endDialog('Sorry, I could not find that article.');
+            } else {
+                session.endDialog(result.value[0].text);
+            }
+        });
+    }
+]).triggerAction({
+    matches: /^show me the article (.*)/i
+});
 
 const createCard = (ticketId, data) => {
     var cardTxt = fs.readFileSync('./cards/ticket.json', 'UTF-8');
