@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 const fs = require('fs');
+const path = require('path');
 const restify = require('restify');
 const builder = require('botbuilder');
 const azureSearch = require('./azureSearchApiClient');
@@ -35,6 +36,11 @@ server.listen(listenPort, '::', () => {
     console.log('Server Up');
 });
 
+server.get(/\/?.*/, restify.serveStatic({
+    directory: path.join(__dirname, 'web-ui'),
+    default: 'default.htm'
+}));
+
 // Setup body parser and tickets api
 server.use(restify.bodyParser());
 server.post('/api/tickets', ticketsApi.add);
@@ -49,6 +55,14 @@ var connector = new builder.ChatConnector({
 // Listen for messages from users
 server.post('/api/messages', connector.listen());
 
+// backchanel event
+const createEvent = (eventName, value, address) => {
+    var msg = new builder.Message().address(address);
+    msg.data.type = 'event';
+    msg.data.name = eventName;
+    msg.data.value = value;
+    return msg;
+};
 
 var bot = new builder.UniversalBot(connector, (session) => {
     session.endDialog(`I'm sorry, I did not understand '${session.message.text}'.\nType 'help' to know more about me :)`);
@@ -119,6 +133,13 @@ bot.dialog('SubmitTicket', [
         }
 
         session.dialogData.description = session.message.text;
+        
+        // send event to embedded bot via backchannel
+        azureSearchQuery(`search=${encodeURIComponent(session.message.text)}`, (err, result) => {
+            if (err || !result.value) return;
+            var event = createEvent('searchResults', result.value, session.message.address);
+            session.send(event);
+        });
 
         if (!session.dialogData.severity) {
             var choices = ['high', 'normal', 'low'];

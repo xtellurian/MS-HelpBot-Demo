@@ -58,10 +58,37 @@
         var resPanel = document.getElementById('results');
         BotChat.App({
             botConnection: botConnection,
-            user: { id: 'WebChatUser' },
-            bot: { id: 'mschatbotdemo' },
+            user: {
+                id: 'WebChatUser'
+            },
+            bot: {
+                id: 'mschatbotdemo'
+            },
             locale: 'en-us',
         }, document.getElementById('bot'));
+
+        botConnection.activity$
+            .filter(function (activity) {
+                return activity.type === 'event' && activity.name === 'searchResults';
+            })
+            .subscribe(function (activity) {
+                updateSearchResults(activity.value)
+            });
+
+        function updateSearchResults(results) {
+            resPanel.innerHTML = '';
+            results.forEach(function (result) {
+                resPanel.appendChild(createSearchResult(result));
+            });
+        }
+
+        function createSearchResult(result) {
+            var el = document.createElement('div');
+            el.innerHTML = '<h3>' + result.title + '</h3>' +
+                '<p>' + result.text.substring(0, 140) + '...</p>';
+
+            return el;
+        }
     </script>
 </body>
 
