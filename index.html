@@ -10,6 +10,7 @@
             margin: 0 auto;
             border: 1px solid black;
         }
+
         aside {
             font-size: 12px;
             font-family: Arial, Helvetica, sans-serif;
@@ -18,16 +19,20 @@
             right: 0;
             color: #3a96dd;
         }
+
         aside div {
             color: black;
         }
+
         #results h3 {
             margin-top: 0;
             margin-bottom: 0;
         }
+
         #results span {
             color: #006621;
         }
+
         #results p {
             margin-top: 0;
             word-wrap: break-word;
@@ -46,7 +51,18 @@
         </div>
     </aside>
     <script src="https://webchat.botframework.com/scripts/adaptive/botchat.js"></script>
-    <iframe src='https://webchat.botframework.com/embed/mschatbotdemo?s=JFgULpBuU7s.cwA.B-8.R8_k4UPGkN1OGEqBaCHyM_LRpfoDEoSTWHNTCnPrrg8'></iframe>
+    <script>
+        var botConnection = new BotChat.DirectLine({
+            secret: 'E_ZVzodp_Uk.cwA.fxk.-dyRdcyIHL8Yc948gXwJlVDZN9z5XNx5s_OJEtiGNb4'
+        });
+        var resPanel = document.getElementById('results');
+        BotChat.App({
+            botConnection: botConnection,
+            user: { id: 'WebChatUser' },
+            bot: { id: 'mschatbotdemo' },
+            locale: 'en-us',
+        }, document.getElementById('bot'));
+    </script>
 </body>
 
 </html>
