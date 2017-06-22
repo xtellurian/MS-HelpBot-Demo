@@ -23,6 +23,10 @@ const azureSearchQuery = azureSearch({
     indexName: process.env.AZURE_SEARCH_INDEX,
     searchKey: process.env.AZURE_SEARCH_KEY
 });
+const HandOffRouter = require('./handoff/router');
+const HandOffCommand = require('./handoff/command');
+
+
 
 
 // Setup Restify Server
@@ -50,6 +54,16 @@ var bot = new builder.UniversalBot(connector, (session) => {
     session.endDialog(`I'm sorry, I did not understand '${session.message.text}'.\nType 'help' to know more about me :)`);
 });
 
+// set up router
+const handOffRouter = new HandOffRouter(bot, (session) => {
+    return session.conversationData.isAgent;
+});
+const handOffCommand = new HandOffCommand(handOffRouter);
+// tell bot to use router and command middleware
+bot.use(handOffCommand.middleware());
+bot.use(handOffRouter.middleware());
+
+
 var luisRecognizer = new builder.LuisRecognizer(process.env.LUIS_MODEL_URL).onEnabled(function (context, callback) {
     var enabled = context.dialogStack().length === 0 || context.dialogStack()[0].id === '*:SubmitTicket';
     console.log('luis enabled:' + enabled);
@@ -58,7 +72,6 @@ var luisRecognizer = new builder.LuisRecognizer(process.env.LUIS_MODEL_URL).onEn
 bot.recognizer(luisRecognizer);
 
 bot.on('conversationUpdate', function (message) {
-
     if (message.membersAdded[0].id === message.user.id) {
         var name = message.user ? message.user.name : null;
         var reply = new builder.Message()
@@ -68,6 +81,28 @@ bot.on('conversationUpdate', function (message) {
     }
 });
 
+// agent login dialog menu
+bot.dialog('AgentMenu', [
+    (session, args) => {
+        session.conversationData.isAgent = true;
+        session.endDialog(`Welcome back human agent, there are ${handOffRouter.pending()} users waiting in the queue.\n\nType _agent help_ for more details.`);
+    }
+]).triggerAction({
+    matches: /^\/agent login/
+});
+
+// hand off to human dialog
+bot.dialog('HandOff',
+    (session, args, next) => {
+        if (handOffCommand.queueMe(session)) {
+            var waitingPeople = handOffRouter.pending() > 1 ? `, there are ${handOffRouter.pending()-1} users waiting` : '';
+            session.send(`Connecting you to the next available human agent... please wait${waitingPeople}.`);
+        }
+        session.endDialog();
+    }
+).triggerAction({
+    matches: 'HandOffToHuman'
+});
 
 
 bot.dialog('SubmitTicket', [
@@ -291,9 +326,9 @@ bot.dialog('ShowKBResults', [
                 session.endDialog(msg);
             })
             // args.result.value.forEach((faq, i) => {
-                // card(faq, imageSearchService(faq.category, (err, url) => {return url}))
-                //card(faq, null) // previous call where query ie url was null
-                //);
+            // card(faq, imageSearchService(faq.category, (err, url) => {return url}))
+            //card(faq, null) // previous call where query ie url was null
+            //);
             // });
             // session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
             // session.endDialog(msg);
