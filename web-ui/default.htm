@@ -27,6 +27,7 @@
         #results h3 {
             margin-top: 0;
             margin-bottom: 0;
+            cursor: pointer;
         }
 
         #results span {
@@ -86,6 +87,22 @@
             var el = document.createElement('div');
             el.innerHTML = '<h3>' + result.title + '</h3>' +
                 '<p>' + result.text.substring(0, 140) + '...</p>';
+
+            el.getElementsByTagName('h3')[0]
+                .addEventListener('click', function () {
+                    botConnection
+                        .postActivity({
+                            type: 'event',
+                            value: this.textContent.trim(),
+                            from: {
+                                id: 'user'
+                            },
+                            name: 'showDetailsOf'
+                        })
+                        .subscribe(function (id) {
+                            console.log('event sent', id);
+                        });
+                });
 
             return el;
         }

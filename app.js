@@ -36,15 +36,16 @@ server.listen(listenPort, '::', () => {
     console.log('Server Up');
 });
 
-server.get(/\/?.*/, restify.serveStatic({
-    directory: path.join(__dirname, 'web-ui'),
-    default: 'default.htm'
-}));
 
 // Setup body parser and tickets api
 server.use(restify.bodyParser());
 server.post('/api/tickets', ticketsApi.add);
-server.get('/api/tickets/:id', ticketsApi.get);
+server.get('/api/tickets/:id', ticketsApi.get); // this must come before the static serve command below
+
+server.get(/\/?.*/, restify.serveStatic({
+    directory: path.join(__dirname, 'web-ui'),
+    default: 'default.htm'
+}));
 
 // Create chat connector for communicating with the Bot Framework Service
 var connector = new builder.ChatConnector({
@@ -92,6 +93,22 @@ bot.on('conversationUpdate', function (message) {
             .address(message.address)
             .text("Hello %s... Thanks for adding me.", name || 'there');
         bot.send(reply);
+    }
+});
+
+// backchanel event
+bot.on(`event`, function (event) {
+    var msg = new builder.Message().address(event.address);
+    msg.data.textLocale = 'en-us';
+    if (event.name === 'showDetailsOf') {
+        azureSearchQuery('$filter=' + encodeURIComponent(`title eq '${event.value}'`), (error, result) => {
+            if (error || !result.value[0]) {
+                msg.data.text = 'Sorry, I could not find that article.';
+            } else {
+                msg.data.text = result.value[0].text;
+            }
+            bot.send(msg);
+        });
     }
 });
 
@@ -295,7 +312,6 @@ bot.dialog('status', [
     (session, args, next) => {
         var ticketNumber = parseInt(session.message.text, 10);
         if (!isNaN(ticketNumber)) {
-            console.log('found a ticket number');
             session.dialogData.ticketNumber = ticketNumber;
             session.sendTyping();
 
@@ -306,11 +322,15 @@ bot.dialog('status', [
             });
             session.sendTyping();
             console.log("looking up ticket number " + ticketNumber);
-            client.get('/api/tickets/' + ticketNumber, (err, request, response, status) => {
-                if (err || !status) {
+            client.get('/api/tickets/' + ticketNumber, (err, request, response, data) => {
+                if (err || !data) {
                     session.send('Sorry, I could not find ticket number ' + ticketNumber);
                 } else {
-                    session.send('Ticket number' + ticketNumber + ' is ' + status);
+                    console.log('found ticket: ', data);
+                    session.send(new builder.Message(session).addAttachment({
+                        contentType: "application/vnd.microsoft.card.adaptive",
+                        content: createCard(ticketNumber, data)
+                    }));
                 }
 
                 session.endDialog();
