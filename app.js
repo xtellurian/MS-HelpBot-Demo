@@ -341,13 +341,14 @@ bot.dialog('status', [
     matches: 'FindStatus'
 });
 
+
 bot.dialog('help',
     (session, args, next) => {
         if (session.dialogStack()[0].id === '*:SubmitTicket') {
             session.endDialog("You can follow my prompts to submit a ticket. If you don't want to submit a ticket, type cancel")
         } else {
-            session.endDialog(`I'm the help desk bot and I can help you create a ticket.\n` +
-                `You can tell me things like _I need to reset my password_ or _I cannot print_.`);
+            session.endDialog(`I'm the help desk bot and I can help you create a ticket or explore the knowledge base.\n` +
+            `You can tell me things like _I need to reset my password_ or _explore hardware articles_.`);
         }
 
     }
