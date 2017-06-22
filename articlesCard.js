@@ -1,5 +1,8 @@
 /* jshint esversion: 6 */
 const builder = require('botbuilder');
+//img search
+// const imageSearch = require('./imageSearchApiClient');
+// const imageSearchService = imageSearch({apiKey: process.env.MICROSOFT_BING_IMAGE_SEARCH_APIKEY});
 
 module.exports = (item, query) => {
 
@@ -39,7 +42,8 @@ module.exports = (item, query) => {
                             size: 'auto',
                             items: [{
                                 type: 'Image',
-                                url: 'https://bot-framework.azureedge.net/bot-icons-v1/bot-framework-default-7.png',
+                                //url: 'https://bot-framework.azureedge.net/bot-icons-v1/bot-framework-default-7.png',
+                                url: query,
                                 size: 'medium'
                             }]
                         }

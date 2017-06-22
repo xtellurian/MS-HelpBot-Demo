@@ -7,6 +7,15 @@ const builder = require('botbuilder');
 const azureSearch = require('./azureSearchApiClient');
 const card = require('./articlesCard');
 
+const imageSearch = require('./imageSearchApiClient');
+const imageSearchService = imageSearch({
+    apiKey: process.env.MICROSOFT_BING_IMAGE_SEARCH_APIKEY
+});
+
+// config
+const listenPort = process.env.port || process.env.PORT || 3978;
+const ticketSubmissionUrl = process.env.TICKET_SUBMISSION_URL || `http://localhost:${listenPort}`;
+
 // services
 const ticketsApi = require('./ticketsApi');
 const azureSearchQuery = azureSearch({
@@ -15,9 +24,6 @@ const azureSearchQuery = azureSearch({
     searchKey: process.env.AZURE_SEARCH_KEY
 });
 
-// config
-const listenPort = process.env.port || process.env.PORT || 3978;
-const ticketSubmissionUrl = process.env.TICKET_SUBMISSION_URL || `http://localhost:${listenPort}`;
 
 // Setup Restify Server
 var server = restify.createServer();
@@ -277,13 +283,20 @@ bot.dialog('ShowKBResults', [
     (session, args) => {
         if (args.result.value.length > 0) {
             var msg = new builder.Message(session).attachmentLayout(builder.AttachmentLayout.carousel);
-            args.result.value.forEach((faq, i) => {
-                msg.addAttachment(
-                     card(faq, null)
-                );
-            });
-            session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
-            session.endDialog(msg);
+            imageSearchService(args.result.value[0].category, (err, imgUrl) => {
+                args.result.value.forEach((faq, i) => {
+                    msg.addAttachment(card(faq, imgUrl));
+                });
+                session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
+                session.endDialog(msg);
+            })
+            // args.result.value.forEach((faq, i) => {
+                // card(faq, imageSearchService(faq.category, (err, url) => {return url}))
+                //card(faq, null) // previous call where query ie url was null
+                //);
+            // });
+            // session.send(`These are some articles I\'ve found in the knowledge base for _'${args.originalText}'_, click **More details** to read the full article:`);
+            // session.endDialog(msg);
         } else {
             session.endDialog(`Sorry, I could not find any results in the knowledge base for _'${args.originalText}'_`);
         }

@@ -11,7 +11,7 @@ module.exports = (config) => {
         });
 
         const urlPath = `/bing/v5.0/images/search?q=${query}&count=10&safeSearch=Strict&imageType=ClipArt`;
-
+        console.log(urlPath);
         var index = Math.floor(Math.random() * 9);
 
         client.post(urlPath, null, (err, request, response, result) => {
